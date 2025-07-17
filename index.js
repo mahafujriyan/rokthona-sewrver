@@ -14,7 +14,7 @@ app.use(express.json());
 // MongoDB Connection
 
 
-const uri = "mongodb+srv://mahafujhossainriyan:tMsIdRrRC43yK71S@cluster0.prhiez6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const uri = `mongodb+srv://${process.env.SERVICE_KEY}:${process.env.SERVICE_PASS}@cluster0.prhiez6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
