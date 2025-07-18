@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -13,10 +14,7 @@ app.use(express.json());
 
 // MongoDB Connection
 
-
-const uri = `mongodb+srv://${process.env.SERVICE_KEY}:${process.env.SERVICE_PASS}@cluster0.prhiez6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const uri =`mongodb+srv://${process.env.SERVICE_KEY}:${process.env.SERVICE_PASS}@cluster0.prhiez6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -25,77 +23,81 @@ const client = new MongoClient(uri, {
   }
 });
 
-
-
 async function run() {
   try {
-    await client.connect();
-    console.log("✅ Connected to MongoDB");
+  
+    const db = client.db("rokthona");
 
-    const db = client.db("rokthonaDB");
     const usersCollection = db.collection("users");
+    const districtCollection = db.collection("districts");
+    const upazilaCollection = db.collection("upazilas");
 
-    // 🔐 Auth Middleware (simple)
-    const verifyApiKey = (req, res, next) => {
-      const apiKey = req.headers.authorization;
-      if (apiKey !== process.env.API_KEY) {
-        return res.status(403).json({ message: "Forbidden: Invalid API Key" });
-      }
-      next();
-    };
-
-    // ➕ CREATE
-    app.post('/users', async (req, res) => {
-      const newUser = req.body;
-      const result = await usersCollection.insertOne(newUser);
-      res.send(result);
-    });
-
-    // 📥 READ ALL
-    app.get('/users', async (req, res) => {
-      const users = await usersCollection.find().toArray();
-      res.send(users);
-    });
-
-    // 🔍 READ ONE
-    app.get('/users/:id', async (req, res) => {
-      const id = req.params.id;
-      const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+    // 🧠 USERS
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
       res.send(user);
     });
 
-    // ✏️ UPDATE
-    app.put('/users/:id', async (req, res) => {
-      const id = req.params.id;
-      const updatedData = req.body;
+    app.put("/users/:email", async (req, res) => {
+  const email = req.params.email;
+  const updatedData = { ...req.body };
 
-      const result = await usersCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updatedData }
-      );
+  delete updatedData._id;
+
+  const result = await usersCollection.updateOne(
+    { email },
+    { $set: updatedData }
+  );
+
+  res.send(result);
+});
+
+          app.post('/users', async (req, res) => {
+        const user = req.body;
+        const existing = await usersCollection.findOne({ email: user.email });
+        if (existing) {
+          return res.status(409).send({ message: 'User already exists' });
+        }
+        const result = await usersCollection.insertOne(user);
+        res.send(result);
+      });
+
+
+    // 📦 DISTRICTS API
+    app.get("/api/districts", async (req, res) => {
+      const districts = await districtCollection.find().toArray();
+      res.json(districts);
+    });
+
+    // 📦 UPAZILAS API
+    app.get("/api/upazilas", async (req, res) => {
+      const upazilas = await upazilaCollection.find().toArray();
+      res.json(upazilas);
+    });
+
+    // 🔍 Filter upazilas by district ID
+    app.get("/api/upazilas/:districtId", async (req, res) => {
+      const districtId = req.params.districtId;
+      const filtered = await upazilaCollection.find({ district_id: districtId }).toArray();
+      res.json(filtered);
+    });
+
+    // ☝️ ONE-TIME: SEED DISTRICTS
+    app.get("/seed-districts", async (req, res) => {
+      const districtData = JSON.parse(fs.readFileSync("./data/district.json", "utf-8"));
+      const result = await districtCollection.insertMany(districtData);
       res.send(result);
     });
 
-    // ❌ DELETE
-    app.delete('/users/:id', async (req, res) => {
-      const id = req.params.id;
-      const result = await usersCollection.deleteOne({ _id: new ObjectId(id) });
+    // ☝️ ONE-TIME: SEED UPAZILAS
+    app.get("/seed-upazilas", async (req, res) => {
+      const upazilaData = JSON.parse(fs.readFileSync("./data/upazila.json", "utf-8"));
+      const result = await upazilaCollection.insertMany(upazilaData);
       res.send(result);
     });
 
-    // Secure Admin Route Example
-    app.put('/make-admin/:id', verifyApiKey, async (req, res) => {
-      const id = req.params.id;
-      const result = await usersCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { role: "admin" } }
-      );
-      res.send(result);
-    });
-
-    app.get('/', (req, res) => {
-      res.send('🚀 RokthoNa API is running');
-    });
+    console.log("✅ MongoDB connected and APIs ready");
 
   } catch (err) {
     console.error('❌ MongoDB connection error:', err);
@@ -104,11 +106,8 @@ async function run() {
 
 run();
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
-app.get('/', (req, res) => res.send('RokthoNa API is running'));
+// ✅ Root endpoint
+app.get('/', (req, res) => res.send('RokthoNa API is running.....'));
 
-// Start Server
-app.listen(port, () => console.log(`Server running on port ${port}`));
+// ✅ Start server (only once)
+app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
