@@ -3,6 +3,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
+const admin = require("../firebaseAdmin");
+const verifyToken = require('./middlewares/verifyToken');
+
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const fs = require('fs');
 const app = express();
@@ -11,6 +14,26 @@ const port = process.env.PORT || 5000;
 // Middlewares
 app.use(cors());
 app.use(express.json());
+//  veryfi token 
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.user = decoded; 
+    next();
+  } catch (error) {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+};
+
+module.exports = verifyToken;
 
 // MongoDB Connection
 
@@ -39,10 +62,27 @@ async function run() {
       res.send(user);
     });
 
-    app.put("/users/:email", async (req, res) => {
+ 
+app.get("/users/:email", verifyToken, async (req, res) => {
   const email = req.params.email;
-  const updatedData = { ...req.body };
 
+  if (req.user.email !== email) {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+
+  const user = await usersCollection.findOne({ email });
+  res.send(user);
+});
+
+// Protect update route too
+app.put("/users/:email", verifyToken, async (req, res) => {
+  const email = req.params.email;
+
+  if (req.user.email !== email) {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+
+  const updatedData = { ...req.body };
   delete updatedData._id;
 
   const result = await usersCollection.updateOne(
@@ -52,16 +92,42 @@ async function run() {
 
   res.send(result);
 });
+// 🔐 Only an admin can assign roles — this is protected
+app.put('/users/role/:email', verifyToken, async (req, res) => {
+  const targetEmail = req.params.email;
+  const { role } = req.body;
 
-          app.post('/users', async (req, res) => {
+  const requester = await usersCollection.findOne({ email: req.user.email });
+
+  if (!requester || requester.role !== 'admin') {
+    return res.status(403).send({ message: 'Forbidden: Only admins can update roles' });
+  }
+
+  const result = await usersCollection.updateOne(
+    { email: targetEmail },
+    { $set: { role } }
+  );
+
+  res.send(result);
+});
+
+
+         
+      app.post('/users', async (req, res) => {
         const user = req.body;
+
         const existing = await usersCollection.findOne({ email: user.email });
         if (existing) {
           return res.status(409).send({ message: 'User already exists' });
         }
+
+        // Set default role if not provided
+        user.role = user.role || 'donor';
+
         const result = await usersCollection.insertOne(user);
         res.send(result);
       });
+
 
 
     // 📦 DISTRICTS API
