@@ -108,7 +108,7 @@ app.post('/users', async (req, res) => {
 
 app.put("/set-role/:email", verifyToken, async (req, res) => {
   const email = req.params.email;
-  const { role } = req.body; // expected role from frontend: "admin", "donor", "volunteer"
+  const { role } = req.body; 
 
   // 🧠 Only admin can change roles
   const requester = req.user.email;
@@ -189,6 +189,18 @@ app.get('/donation-requests/by-requester', verifyToken, async (req, res) => {
     res.status(500).send({ message: 'Failed to fetch donation requests.' });
   }
 });
+// GET /donation-requests/by-donor?email=...
+app.get('/donation-requests/by-donor', verifyToken, async (req, res) => {
+  const email = req.query.email;
+  try {
+    const requests = await donationRequestCollection.find({ donorEmail: email }).toArray(); 
+    res.send(requests);
+  } catch (error) {
+    console.error('Error fetching donor donation requests:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 
   
 app.get('/donation-requests/user', verifyToken, async (req, res) => {
