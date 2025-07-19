@@ -158,19 +158,60 @@ app.put("/set-role/:email", verifyToken, async (req, res) => {
   res.send({ message: 'Donation request created', result });
 });
 
-  
-app.get('/donation-requests', verifyToken, async (req, res) => {
-  const { email, limit } = req.query;
-  const query = { donorEmail: email };
-  const options = { sort: { donationDate: -1 } };
+  // get my all donation request 
+  // Add this to your Express backend if not added yet
+app.get('/donation-requests/by-requester', verifyToken, async (req, res) => {
+  try {
+    const { email, status, page = 1, limit = 10 } = req.query;
 
-  const donations = await donationRequestCollection
-    .find(query, options)
-    .limit(parseInt(limit) || 0)
-    .toArray();
+    if (req.user.email !== email) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
 
-  res.send(donations);
+    const query = { requesterEmail: email };
+    if (status) query.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const total = await donationRequestCollection.countDocuments(query);
+
+    const requests = await donationRequestCollection
+      .find(query)
+      .sort({ donationDate: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .toArray();
+
+    res.send({
+      requests,
+      totalPages: Math.ceil(total / parseInt(limit)),
+    });
+  } catch (err) {
+    res.status(500).send({ message: 'Failed to fetch donation requests.' });
+  }
 });
+
+  
+app.get('/donation-requests/user', verifyToken, async (req, res) => {
+  try {
+    const { email, type } = req.query;
+    let query = {};
+
+    if (type === 'requester') {
+      query = { requesterEmail: email };
+    } else if (type === 'donor') {
+      query = { donorEmail: email };
+    } else {
+      return res.status(400).send({ message: 'Type must be requester or donor' });
+    }
+
+    const data = await donationRequestCollection.find(query).toArray();
+    res.send(data);
+  } catch (error) {
+    res.status(500).send({ message: 'Failed to fetch data' });
+  }
+});
+
+
 
 // PATCH: /donation-requests/:id/status
 app.patch('/donation-requests/:id/status', verifyToken, async (req, res) => {
