@@ -47,20 +47,40 @@ async function run() {
   try {
     const db = client.db("rokthona");
     const usersCollection = db.collection("users");
+    const donationRequestCollection = db.collection("donation");
     const districtCollection = db.collection("districts");
     const upazilaCollection = db.collection("upazilas");
+// ✅ 1. Declare middleware first
+const verifyAdmin = async (req, res, next) => {
+  const requester = await usersCollection.findOne({ email: req.user.email });
+  if (requester?.role !== 'admin') {
+    return res.status(403).send({ message: 'Forbidden: Admins only' });
+  }
+  next();
+};
 
-    // USERS
-    app.post('/users', async (req, res) => {
-      const user = req.body;
-      const existing = await usersCollection.findOne({ email: user.email });
-      if (existing) {
-        return res.status(409).send({ message: 'User already exists' });
-      }
-      user.role = user.role || 'donor';
-      const result = await usersCollection.insertOne(user);
-      res.send(result);
-    });
+
+// GET all users — needed for your admin panel or role-management page
+      app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+        const users = await usersCollection.find().toArray();
+        res.send(users);
+      });
+
+    
+   
+app.post('/users', async (req, res) => {
+  const user = req.body;
+  const existing = await usersCollection.findOne({ email: user.email });
+
+  if (existing) {
+    return res.status(409).send({ message: 'User already exists' });
+  }
+
+  user.role = user.role || 'donor'; 
+  const result = await usersCollection.insertOne(user);
+  res.send(result);
+});
+
 
     app.get('/users/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
@@ -85,15 +105,6 @@ async function run() {
       res.send(result);
     });
 
-    // app.get('/users/role/:email', verifyToken, async (req, res) => {
-    //   const email = req.params.email;
-    //   if (req.user.email !== email) {
-    //     return res.status(403).send({ message: 'Forbidden access' });
-    //   }
-    //   const user = await usersCollection.findOne({ email });
-    //   res.send({ role: user?.role || null });
-    // });
-    // Add this in server.js
 
 app.put("/set-role/:email", verifyToken, async (req, res) => {
   const email = req.params.email;
@@ -125,15 +136,8 @@ app.put("/set-role/:email", verifyToken, async (req, res) => {
 });
 
 
-    // Admin-only Middleware
-    const verifyAdmin = async (req, res, next) => {
-      const requester = await usersCollection.findOne({ email: req.user.email });
-      if (requester?.role !== 'admin') {
-        return res.status(403).send({ message: 'Forbidden: Admins only' });
-      }
-      next();
-    };
-
+ 
+  
     // Update Role (admin only)
     app.put('/users/role/:email', verifyToken, verifyAdmin, async (req, res) => {
       const targetEmail = req.params.email;
@@ -144,6 +148,44 @@ app.put("/set-role/:email", verifyToken, async (req, res) => {
       );
       res.send(result);
     });
+
+
+    //  donner role 
+  
+app.get('/donation-requests', verifyToken, async (req, res) => {
+  const { email, limit } = req.query;
+  const query = { donorEmail: email };
+  const options = { sort: { donationDate: -1 } };
+
+  const donations = await donationRequestCollection
+    .find(query, options)
+    .limit(parseInt(limit) || 0)
+    .toArray();
+
+  res.send(donations);
+});
+
+// PATCH: /donation-requests/:id/status
+app.patch('/donation-requests/:id/status', verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const result = await donationRequestCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status } }
+  );
+  res.send(result);
+});
+// DELETE: /donation-requests/:id
+app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const result = await donationRequestCollection.deleteOne({ _id: new ObjectId(id) });
+  res.send(result);
+});
+
+
+
+
+
 
     // DISTRICTS API
     app.get("/api/districts", async (req, res) => {
