@@ -151,6 +151,13 @@ app.put("/set-role/:email", verifyToken, async (req, res) => {
 
 
     //  donner role 
+    // post the new donation page 
+    app.post('/donation-requests', verifyToken, async (req, res) => {
+  const request = req.body;
+  const result = await donationRequestCollection.insertOne(request);
+  res.send({ message: 'Donation request created', result });
+});
+
   
 app.get('/donation-requests', verifyToken, async (req, res) => {
   const { email, limit } = req.query;
