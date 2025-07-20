@@ -273,7 +273,7 @@ app.patch('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
 
 
 // searcfh the data 
-app.patch('/donation-requests/:id/confirm', verifyToken, async (req, res) => {
+app.patch('/donationData/:id/confirm', verifyToken, async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {
@@ -399,35 +399,20 @@ app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
       }
     });
 
-    app.get('/donation-requests/user', verifyToken, async (req, res) => {
+ app.get('/donationValue/public', verifyToken, async (req, res) => {
   try {
-   
-    const { email, type } = req.query;
+    const pendingRequests = await donationRequestCollection
+      .find({ status: 'pending' })
+      .sort({ donationDate: -1 })
+      .toArray();
 
-    if (!email || !type) {
-      return res.status(400).send({ message: 'Email and type query params are required' });
-    }
-
-    if (req.user.email !== email) {
-      return res.status(403).send({ message: 'Forbidden access' });
-    }
-
-    let query = {};
-    if (type === 'requester') {
-      query = { requesterEmail: email };
-    } else if (type === 'donor') {
-      query = { donorEmail: email };
-    } else {
-      return res.status(400).send({ message: 'Type must be requester or donor' });
-    }
-
-    const data = await donationRequestCollection.find(query).toArray();
-    res.send(data);
-  } catch (error) {
-    console.error("❌ Error in /donation-requests/user:", error);
-    res.status(500).send({ message: 'Failed to fetch data' });
+    res.send(pendingRequests);
+  } catch (err) {
+    console.error('❌ Error in GET /donation-requests/public:', err);
+    res.status(500).send({ message: 'Failed to fetch public donation requests' });
   }
 });
+
 
 
  app.patch('/donation-data/:id/status', verifyToken, async (req, res) => {
@@ -592,8 +577,8 @@ app.post('/create-payment-intent', verifyToken, async (req, res) => {
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe expects in cents
-      currency: 'usd', // or 'bdt' (BDT only for certain countries)
+      amount: Math.round(amount * 100),
+      currency: 'usd', 
       payment_method_types: ['card'],
     });
 
