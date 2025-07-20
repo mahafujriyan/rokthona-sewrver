@@ -1,4 +1,5 @@
- const express = require('express');
+
+const express = require('express');
 
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -63,6 +64,23 @@ async function run() {
       next();
     };
 
+    // volenters verification 
+    const verifyVolunteer = async (req, res, next) => {
+  try {
+    const user = await usersCollection.findOne({ email: req.user.email });
+
+    if (!user || user.role !== 'volunteer') {
+      return res.status(403).send({ message: 'Forbidden: Volunteers only' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('❌ Volunteer verification error:', error);
+    res.status(500).send({ message: 'Failed to verify volunteer access' });
+  }
+};
+
+
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.send(users);
@@ -77,7 +95,7 @@ async function run() {
       }
     });
 
-    app.get('/donation-requests/:id', verifyToken, 
+    app.get('/donation/:id', verifyToken, 
       async (req, res) => {
       const { id } = req.params;
 console.log(id)
@@ -207,18 +225,48 @@ app.patch('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
     res.status(500).send({ message: "Failed to search donors", error: error.message });
   }
 });
+//  admin data 
 
     app.get('/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
       const totalUsers = await usersCollection.countDocuments();
       const totalDonations = await donationRequestCollection.countDocuments();
-      const totalFunds = await db.collection('funds').aggregate([
-        { $group: { _id: null, total: { $sum: "$amount" } } }
-      ]).toArray();
+      
+    const totalFundingData = await fundsCollection.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$amount" }
+        }
+      }
+    ]).toArray();
 
+    const totalFunding = totalFundingData[0]?.total || 0;
       res.send({
         totalUsers,
-        totalDonations,
-        totalFunds: totalFunds[0]?.total || 0
+         totalRequests: totalDonations,
+        totalFunding
+       
+      });
+    });
+    app.get('/volunteers/stats', verifyToken, verifyVolunteer, async (req, res) => {
+      const totalUsers = await usersCollection.countDocuments();
+      const totalDonations = await donationRequestCollection.countDocuments();
+      
+    const totalFundingData = await fundsCollection.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$amount" }
+        }
+      }
+    ]).toArray();
+
+    const totalFunding = totalFundingData[0]?.total || 0;
+      res.send({
+        totalUsers,
+        totalRequests: totalDonations,
+        totalFunding
+       
       });
     });
 
@@ -262,7 +310,7 @@ app.patch('/donation-requests/:id/confirm', verifyToken, async (req, res) => {
 
 
     // ✅ GET all donation requests (Admin only)
-app.get('/donation-requests/all', verifyToken, verifyAdmin, async (req, res) => {
+app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
 
@@ -352,74 +400,99 @@ app.get('/donation-requests/all', verifyToken, verifyAdmin, async (req, res) => 
     });
 
     app.get('/donation-requests/user', verifyToken, async (req, res) => {
-      try {
-        const { email, type } = req.query;
+  try {
+   
+    const { email, type } = req.query;
 
-        if (!email || !type) {
-          return res.status(400).send({ message: 'Email and type query params are required' });
-        }
+    if (!email || !type) {
+      return res.status(400).send({ message: 'Email and type query params are required' });
+    }
 
-        if (req.user.email !== email) {
-          return res.status(403).send({ message: 'Forbidden access' });
-        }
+    if (req.user.email !== email) {
+      return res.status(403).send({ message: 'Forbidden access' });
+    }
 
-        let query = {};
-        if (type === 'requester') {
-          query = { requesterEmail: email };
-        } else if (type === 'donor') {
-          query = { donorEmail: email };
-        } else {
-          return res.status(400).send({ message: 'Type must be requester or donor' });
-        }
+    let query = {};
+    if (type === 'requester') {
+      query = { requesterEmail: email };
+    } else if (type === 'donor') {
+      query = { donorEmail: email };
+    } else {
+      return res.status(400).send({ message: 'Type must be requester or donor' });
+    }
 
-        const data = await donationRequestCollection.find(query).toArray();
-        res.send(data);
-      } catch (error) {
-        console.error("❌ Error in /donation-requests/user:", error);
-        res.status(500).send({ message: 'Failed to fetch data' });
-      }
-    });
+    const data = await donationRequestCollection.find(query).toArray();
+    res.send(data);
+  } catch (error) {
+    console.error("❌ Error in /donation-requests/user:", error);
+    res.status(500).send({ message: 'Failed to fetch data' });
+  }
+});
 
-    app.patch('/donation-requests/:id/status', verifyToken, async (req, res) => {
-      const { id } = req.params;
-      const { status } = req.body;
-      console.log(id)
 
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid donation request ID" });
-      }
+ app.patch('/donation-data/:id/status', verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
 
-      if (!status) {
-        return res.status(400).send({ message: "Status is required" });
-      }
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid donation request ID" });
+  }
 
-      try {
-        const result = await donationRequestCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { status } }
-        );
-        res.send(result);
-      } catch (error) {
-        console.error("❌ Error updating status:", error);
-        res.status(500).send({ message: "Failed to update status", error: error.message });
-      }
-    });
+  if (!status || typeof status !== 'string') {
+    return res.status(400).send({ message: "Valid status is required" });
+  }
 
-    app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
-      const { id } = req.params;
+  try {
+    const result = await donationRequestCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
 
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid donation request ID" });
-      }
+    if (result.modifiedCount === 0) {
+      return res.status(404).send({ message: "Donation request not found or status already set" });
+    }
 
-      try {
-        const result = await donationRequestCollection.deleteOne({ _id: new ObjectId(id) });
-        res.send(result);
-      } catch (error) {
-        console.error("❌ Error deleting donation request:", error);
-        res.status(500).send({ message: "Failed to delete donation request", error: error.message });
-      }
-    });
+    res.send({ message: "Status updated successfully", result });
+  } catch (error) {
+    console.error("❌ Error updating status:", error);
+    res.status(500).send({ message: "Failed to update status", error: error.message });
+  }
+});
+
+   app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid donation request ID" });
+  }
+
+  try {
+    const request = await donationRequestCollection.findOne({ _id: new ObjectId(id) });
+    if (!request) {
+      return res.status(404).send({ message: "Donation request not found" });
+    }
+
+    // Allow requester or admin to delete
+    const userEmail = req.user.email;
+    const user = await usersCollection.findOne({ email: userEmail });
+
+    if (request.requesterEmail !== userEmail && user?.role !== 'admin') {
+      return res.status(403).send({ message: "Unauthorized to delete this request" });
+    }
+
+    const result = await donationRequestCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 1) {
+      res.send({ message: "Donation request deleted successfully" });
+    } else {
+      res.status(500).send({ message: "Failed to delete donation request" });
+    }
+  } catch (error) {
+    console.error('Error deleting donation request:', error);
+    res.status(500).send({ message: 'Internal server error' });
+  }
+});
+
 
     // blog post  and others 
 
@@ -476,6 +549,36 @@ const verifyAdminOrVolunteer = async (req, res, next) => {
   }
   next();
 };
+
+
+
+// get funding data 
+app.get('/admin/stats', verifyToken, verifyAdminOrVolunteer, async (req, res) => {
+  try {
+    const totalUsers = await usersCollection.estimatedDocumentCount();
+    const totalRequests = await donationCollection.estimatedDocumentCount();
+    const totalFundingData = await fundsCollection.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$amount" }
+        }
+      }
+    ]).toArray();
+
+    const totalFunding = totalFundingData[0]?.total || 0;
+
+    res.send({
+      totalUsers,
+      totalRequests,
+      totalFunding,
+    });
+  } catch (err) {
+    console.error('Admin stats error:', err);
+    res.status(500).send({ error: 'Failed to load stats' });
+  }
+});
+
 
 
 // post the funds
