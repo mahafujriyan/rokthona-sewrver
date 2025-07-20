@@ -79,6 +79,20 @@ async function run() {
     res.status(500).send({ message: 'Failed to verify volunteer access' });
   }
 };
+const verifyAdminOrVolunteer = async (req, res, next) => {
+  try {
+    const user = await usersCollection.findOne({ email: req.user.email });
+
+    if (!user || (user.role !== 'admin' && user.role !== 'volunteer')) {
+      return res.status(403).send({ message: 'Forbidden: Admins or Volunteers only' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('❌ Role verification error:', error);
+    res.status(500).send({ message: 'Failed to verify access' });
+  }
+};
 
 
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
@@ -208,15 +222,16 @@ app.patch('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
     });
 
     //  search donner
-    app.get('/donors/search', async (req, res) => {
+    app.get('/donors', async (req, res) => {
   const { bloodGroup, district, upazila } = req.query;
 
-  const query = {
-    role: 'donor',
-    ...(bloodGroup && { bloodGroup }),
-    ...(district && { district }),
-    ...(upazila && { upazila }),
-  };
+ const query = {
+  role: 'donor',
+  ...(bloodGroup && { bloodGroup: { $regex: `^${bloodGroup}$`, $options: 'i' } }),
+  ...(district && { district }),
+  ...(upazila && { upazila }),
+};
+
 
   try {
     const donors = await usersCollection.find(query).toArray();
@@ -482,7 +497,8 @@ app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
     // blog post  and others 
 
     // Create a blog
-app.post('/blogs', verifyToken, verifyAdmin, async (req, res) => {
+// Allow admins and volunteers to create blogs
+app.post('/blogs', verifyToken, verifyAdminOrVolunteer, async (req, res) => {
   const blog = {
     ...req.body,
     status: req.body.status || 'draft',
@@ -491,6 +507,7 @@ app.post('/blogs', verifyToken, verifyAdmin, async (req, res) => {
   const result = await blogCollection.insertOne(blog);
   res.send(result);
 });
+
 
 // Get all blogs with optional status filter
 app.get('/blogs', async (req, res) => {
@@ -509,14 +526,21 @@ app.get('/blogs/:id', async (req, res) => {
 });
 
 // Update blog status (publish/unpublish)
-app.patch('/blogs/:id/status', verifyToken, verifyAdmin, async (req, res) => {
+// PATCH /blogs/:id/status
+app.patch('/blogs/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  const result = await blogCollection.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { status } }
-  );
-  res.send(result);
+
+  try {
+    const result = await blogsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
+
+    res.send({ success: result.modifiedCount > 0 });
+  } catch (error) {
+    res.status(500).send({ message: 'Failed to update status', error: error.message });
+  }
 });
 
 // Delete blog
@@ -527,13 +551,6 @@ app.delete('/blogs/:id', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // Funding related api 
-const verifyAdminOrVolunteer = async (req, res, next) => {
-  const user = await usersCollection.findOne({ email: req.user.email });
-  if (!['admin', 'volunteer'].includes(user?.role)) {
-    return res.status(403).send({ message: "Forbidden: Admin or Volunteer only" });
-  }
-  next();
-};
 
 
 
