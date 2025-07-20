@@ -6,7 +6,8 @@ require('dotenv').config();
 const admin = require("./firebaseAdmin");
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const fs = require('fs');
-
+const Stripe = require('stripe');
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY); 
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -50,6 +51,8 @@ async function run() {
     const districtCollection = db.collection("districts");
     const upazilaCollection = db.collection("upazilas");
     const blogCollection = db.collection("blogs");
+    const fundsCollection = db.collection("funds");
+
 
     // Admin verification middleware
     const verifyAdmin = async (req, res, next) => {
@@ -74,9 +77,10 @@ async function run() {
       }
     });
 
-    app.get('/donation-requests/:id', verifyToken, async (req, res) => {
+    app.get('/donation-requests/:id', verifyToken, 
+      async (req, res) => {
       const { id } = req.params;
-
+console.log(id)
       if (!ObjectId.isValid(id)) {
         return res.status(400).send({ message: "Invalid donation request ID" });
       }
@@ -292,7 +296,7 @@ app.get('/donation-requests/all', verifyToken, verifyAdmin, async (req, res) => 
       res.send({ message: 'Donation request created', result });
     });
 
-    app.get('/donation-requests/by-requester', verifyToken, async (req, res) => {
+    app.get('/donation-requestss/by-requester', verifyToken, async (req, res) => {
       try {
         const { email, status, page = 1, limit = 10 } = req.query;
 
@@ -379,6 +383,7 @@ app.get('/donation-requests/all', verifyToken, verifyAdmin, async (req, res) => 
     app.patch('/donation-requests/:id/status', verifyToken, async (req, res) => {
       const { id } = req.params;
       const { status } = req.body;
+      console.log(id)
 
       if (!ObjectId.isValid(id)) {
         return res.status(400).send({ message: "Invalid donation request ID" });
@@ -462,6 +467,65 @@ app.delete('/blogs/:id', verifyToken, verifyAdmin, async (req, res) => {
   const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
   res.send(result);
 });
+
+// Funding related api 
+const verifyAdminOrVolunteer = async (req, res, next) => {
+  const user = await usersCollection.findOne({ email: req.user.email });
+  if (!['admin', 'volunteer'].includes(user?.role)) {
+    return res.status(403).send({ message: "Forbidden: Admin or Volunteer only" });
+  }
+  next();
+};
+
+
+// post the funds
+
+app.post('/create-payment-intent', verifyToken, async (req, res) => {
+  const { amount } = req.body;
+
+  if (!amount || amount < 10) {
+    return res.status(400).json({ error: 'Amount too small' });
+  }
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Stripe expects in cents
+      currency: 'usd', // or 'bdt' (BDT only for certain countries)
+      payment_method_types: ['card'],
+    });
+
+    res.send({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error('Stripe error:', error);
+    res.status(500).send({ error: 'Failed to create payment intent' });
+  }
+});
+
+
+
+
+
+app.post('/payments', verifyToken, async (req, res) => {
+  const { amount, transactionId, date } = req.body;
+
+  try {
+    const payment = {
+      name: req.user.name || req.user.displayName || 'Anonymous',
+      email: req.user.email,
+      amount: parseFloat(amount),
+      transactionId,
+      date: new Date(date || Date.now())
+    };
+
+    const result = await fundsCollection.insertOne(payment);
+    res.send({ message: 'Payment saved successfully', result });
+  } catch (error) {
+    res.status(500).send({ error: 'Failed to save payment' });
+  }
+});
+
+
+
 
     app.get("/api/districts", async (req, res) => {
       const districts = await districtCollection.find().toArray();
