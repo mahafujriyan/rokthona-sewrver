@@ -109,10 +109,10 @@ const verifyAdminOrVolunteer = async (req, res, next) => {
       }
     });
 
-    app.get('/donation/:id', verifyToken, 
+    app.get('/donations/:id', verifyToken, 
       async (req, res) => {
       const { id } = req.params;
-console.log(id)
+
       if (!ObjectId.isValid(id)) {
         return res.status(400).send({ message: "Invalid donation request ID" });
       }
@@ -426,13 +426,36 @@ app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
     console.error('❌ Error in GET /donation-requests/public:', err);
     res.status(500).send({ message: 'Failed to fetch public donation requests' });
   }
+}); 
+// Make sure this exists
+app.patch('/donationRequest/:id/confirm', verifyToken, async (req, res) => {
+  const { id } = req.params;
+
+  const result = await donationRequestCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        status: 'inprogress',
+        donorName: req.user.name,
+        donorEmail: req.user.email,
+        donorId: req.user.uid,
+      },
+    }
+  );
+
+  if (result.modifiedCount > 0) {
+    return res.send({ message: 'Donation confirmed successfully' });
+  }
+
+  res.status(400).send({ message: 'Unable to confirm donation' });
 });
 
 
-
- app.patch('/donation-data/:id/status', verifyToken, async (req, res) => {
+app.patch('/donationsData/:id/status', verifyToken, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+
+  
 
   if (!ObjectId.isValid(id)) {
     return res.status(400).send({ message: "Invalid donation request ID" });
@@ -459,39 +482,8 @@ app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-   app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
-  const { id } = req.params;
 
-  if (!ObjectId.isValid(id)) {
-    return res.status(400).send({ message: "Invalid donation request ID" });
-  }
-
-  try {
-    const request = await donationRequestCollection.findOne({ _id: new ObjectId(id) });
-    if (!request) {
-      return res.status(404).send({ message: "Donation request not found" });
-    }
-
-    // Allow requester or admin to delete
-    const userEmail = req.user.email;
-    const user = await usersCollection.findOne({ email: userEmail });
-
-    if (request.requesterEmail !== userEmail && user?.role !== 'admin') {
-      return res.status(403).send({ message: "Unauthorized to delete this request" });
-    }
-
-    const result = await donationRequestCollection.deleteOne({ _id: new ObjectId(id) });
-
-    if (result.deletedCount === 1) {
-      res.send({ message: "Donation request deleted successfully" });
-    } else {
-      res.status(500).send({ message: "Failed to delete donation request" });
-    }
-  } catch (error) {
-    console.error('Error deleting donation request:', error);
-    res.status(500).send({ message: 'Internal server error' });
-  }
-});
+ 
 
 
     // blog post  and others 
@@ -525,11 +517,19 @@ app.get('/blogs/:id', async (req, res) => {
   res.send(blog);
 });
 
-// Update blog status (publish/unpublish)
-// PATCH /blogs/:id/status
+
+// Publish
 app.patch('/blogs/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+
+
+  if (!status || !['draft', 'published'].includes(status)) {
+    return res.status(400).send({ message: 'Invalid status value' });
+  }
+
+
+  console.log('Updating blog status:', id, 'to', status);
 
   try {
     const result = await blogsCollection.updateOne(
@@ -537,11 +537,13 @@ app.patch('/blogs/:id/status', async (req, res) => {
       { $set: { status } }
     );
 
+    // ✅ 3. Handle response
     res.send({ success: result.modifiedCount > 0 });
   } catch (error) {
     res.status(500).send({ message: 'Failed to update status', error: error.message });
   }
 });
+
 
 // Delete blog
 app.delete('/blogs/:id', verifyToken, verifyAdmin, async (req, res) => {
