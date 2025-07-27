@@ -80,19 +80,16 @@ async function run() {
   }
 };
 const verifyAdminOrVolunteer = async (req, res, next) => {
-  try {
-    const user = await usersCollection.findOne({ email: req.user.email });
+  const email = req.decoded?.email;
+  const user = await usersCollection.findOne({ email });
 
-    if (!user || (user.role !== 'admin' && user.role !== 'volunteer')) {
-      return res.status(403).send({ message: 'Forbidden: Admins or Volunteers only' });
-    }
-
+  if (user?.role === 'admin' || user?.role === 'volunteer') {
     next();
-  } catch (error) {
-    console.error('❌ Role verification error:', error);
-    res.status(500).send({ message: 'Failed to verify access' });
+  } else {
+    res.status(403).send({ message: 'Forbidden' });
   }
 };
+
 
 
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
@@ -225,19 +222,14 @@ app.patch('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
     app.get('/donors', async (req, res) => {
   const { bloodGroup, district, upazila } = req.query;
 
-//  const query = {
-//   role: 'donor',
-//   ...(bloodGroup && { bloodGroup: { $regex: `^${bloodGroup}$`, $options: 'i' } }),
-//   ...(district && { district }),
-//   ...(upazila && { upazila }),
-// };
+
 const query = {
   role: 'donor',
   ...(bloodGroup && {
     bloodGroup: { $regex: bloodGroup, $options: 'i' } 
   }),
-  ...(district && { district }), // exact match
-  ...(upazila && { upazila }),   // exact match
+  ...(district && { district }), 
+  ...(upazila && { upazila }),   
 };
 
 
@@ -333,7 +325,7 @@ app.patch('/donationData/:id/confirm', verifyToken, async (req, res) => {
 
 
     // ✅ GET all donation requests (Admin only)
-app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
+app.get('/admin/all', verifyToken, async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
 
@@ -357,6 +349,33 @@ app.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
   } catch (err) {
     console.error("❌ Error in /donation-requests/all:", err);
     res.status(500).send({ message: 'Failed to fetch donation requests.' });
+  }
+});
+// adnit fetch 
+
+app.patch('/admin/all/:id/status', verifyToken,verifyAdmin,
+ async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).send({ message: 'Status is required' });
+  }
+
+  try {
+    const result = await donationRequestCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
+
+    if (result.modifiedCount === 1) {
+      res.send({ message: 'Status updated successfully' });
+    } else {
+      res.status(404).send({ message: 'Donation request not found' });
+    }
+  } catch (error) {
+    console.error('❌ Error updating status:', error);
+    res.status(500).send({ message: 'Failed to update donation status' });
   }
 });
 
@@ -594,6 +613,35 @@ app.get('/admin/stats', verifyToken, verifyAdminOrVolunteer, async (req, res) =>
 
 
 // post the funds
+// get payment data 
+app.get('/payments', verifyToken, verifyAdmin, async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  try {
+    const total = await fundsCollection.estimatedDocumentCount();
+    const totalPages = Math.ceil(total / limit);
+
+    const payments = await fundsCollection
+      .find()
+      .sort({ date: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    res.send({
+      total,
+      totalPages, 
+      page,
+      limit,
+      payments
+    });
+  } catch (error) {
+    res.status(500).send({ error: 'Failed to fetch payments' });
+  }
+});
+
 
 app.post('/create-payment-intent', verifyToken, async (req, res) => {
   const { amount } = req.body;
