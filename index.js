@@ -225,11 +225,19 @@ app.patch('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
     app.get('/donors', async (req, res) => {
   const { bloodGroup, district, upazila } = req.query;
 
- const query = {
+//  const query = {
+//   role: 'donor',
+//   ...(bloodGroup && { bloodGroup: { $regex: `^${bloodGroup}$`, $options: 'i' } }),
+//   ...(district && { district }),
+//   ...(upazila && { upazila }),
+// };
+const query = {
   role: 'donor',
-  ...(bloodGroup && { bloodGroup: { $regex: `^${bloodGroup}$`, $options: 'i' } }),
-  ...(district && { district }),
-  ...(upazila && { upazila }),
+  ...(bloodGroup && {
+    bloodGroup: { $regex: bloodGroup, $options: 'i' } 
+  }),
+  ...(district && { district }), // exact match
+  ...(upazila && { upazila }),   // exact match
 };
 
 
@@ -532,7 +540,7 @@ app.patch('/blogs/:id/status', async (req, res) => {
   console.log('Updating blog status:', id, 'to', status);
 
   try {
-    const result = await blogsCollection.updateOne(
+    const result = await blogCollection.updateOne(
       { _id: new ObjectId(id) },
       { $set: { status } }
     );
