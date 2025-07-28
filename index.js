@@ -356,7 +356,7 @@ app.get('/admin/all', verifyToken, async (req, res) => {
 app.patch('/admin/all/:id/status', verifyToken,verifyAdmin,
  async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status } = req.body
 
   if (!status) {
     return res.status(400).send({ message: 'Status is required' });
@@ -517,7 +517,7 @@ app.patch('/donationsData/:id/status', verifyToken, async (req, res) => {
 
     // Create a blog
 // Allow admins and volunteers to create blogs
-app.post('/blogs', verifyToken, verifyAdminOrVolunteer, async (req, res) => {
+app.post('/blogs', verifyToken,  async (req, res) => {
   const blog = {
     ...req.body,
     status: req.body.status || 'draft',
