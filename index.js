@@ -219,9 +219,8 @@ app.patch('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
     });
 
     //  search donner
-    app.get('/donors', async (req, res) => {
+   app.get('/donors', async (req, res) => {
   const { bloodGroup, district, upazila } = req.query;
-
 
 const query = {
   role: 'donor',
@@ -230,6 +229,8 @@ const query = {
   }),
   ...(district && { district }), 
   ...(upazila && { upazila }),   
+ 
+    
 };
 
 
