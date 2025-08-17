@@ -46,13 +46,21 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    const db = client.db("rokthona");
-    const usersCollection = db.collection("users");
-    const donationRequestCollection = db.collection("donation");
-    const districtCollection = db.collection("districts");
-    const upazilaCollection = db.collection("upazilas");
-    const blogCollection = db.collection("blogs");
-    const fundsCollection = db.collection("funds");
+const db = client.db("rokthona");
+const usersCollection = db.collection("users");
+const donationRequestCollection = db.collection("donation");
+const districtCollection = db.collection("districts");
+const upazilaCollection = db.collection("upazilas");
+const blogCollection = db.collection("blogs");
+const fundsCollection = db.collection("funds");
+const donnerCollection = db.collection("donner");
+
+// এখন API বানাও
+app.get("/ready-donner", async (req, res) => {
+  const result = await donnerCollection.find().toArray();
+  res.send(result);
+});
+
 
 
     // Admin verification middleware
@@ -92,7 +100,7 @@ const verifyAdminOrVolunteer = async (req, res, next) => {
 
 
 
-    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+    app.get('/users', verifyToken,  async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.send(users);
     });
@@ -723,7 +731,18 @@ app.post('/payments', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('❌ MongoDB connection error:', err);
   }
+app.get("/ready-donner", async (req, res) => {
+  try {
+    const result = await donnerCollection.find().toArray();
+    res.json(result); 
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch donors" });
+  }
+});
+
 }
+
 
 run();
 
